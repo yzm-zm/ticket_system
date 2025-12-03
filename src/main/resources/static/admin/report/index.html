@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运营报表</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>运营报表</h2>
+        </div>
+
+        <div class="search-form">
+            <el-form :inline="true" :model="queryForm" class="demo-form-inline">
+                <el-form-item label="开始日期">
+                    <el-date-picker v-model="queryForm.startDate" type="date" placeholder="选择开始日期" format="yyyy-MM-dd" value-format="yyyy-MM-dd"></el-date-picker>
+                </el-form-item>
+                <el-form-item label="结束日期">
+                    <el-date-picker v-model="queryForm.endDate" type="date" placeholder="选择结束日期" format="yyyy-MM-dd" value-format="yyyy-MM-dd"></el-date-picker>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleQuery">查询</el-button>
+                    <el-button @click="resetQuery">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>
+
+        <div class="form-container">
+            <h3>统计数据</h3>
+            <el-row :gutter="20">
+                <el-col :span="6">
+                    <el-card>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; color: #409EFF; margin-bottom: 10px;">{{ statistics.totalOrders }}</div>
+                            <div style="color: #666;">总订单数</div>
+                        </div>
+                    </el-card>
+                </el-col>
+                <el-col :span="6">
+                    <el-card>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; color: #67C23A; margin-bottom: 10px;">{{ statistics.paidOrders }}</div>
+                            <div style="color: #666;">已支付订单数</div>
+                        </div>
+                    </el-card>
+                </el-col>
+                <el-col :span="6">
+                    <el-card>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; color: #E6A23C; margin-bottom: 10px;">￥{{ formatMoney(statistics.totalRevenue) }}</div>
+                            <div style="color: #666;">总收入</div>
+                        </div>
+                    </el-card>
+                </el-col>
+                <el-col :span="6">
+                    <el-card>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; color: #F56C6C; margin-bottom: 10px;">{{ statistics.refundRate }}%</div>
+                            <div style="color: #666;">退票率</div>
+                        </div>
+                    </el-card>
+                </el-col>
+            </el-row>
+        </div>
+
+        <div class="form-container">
+            <h3>订单列表</h3>
+            <el-table :data="orderList" border style="width: 100%;">
+                <el-table-column prop="orderNo" label="订单号" align="center"></el-table-column>
+                <el-table-column label="车次" align="center">
+                    <template slot-scope="scope">{{ scope.row.trainNo || '加载中...' }}</template>
+                </el-table-column>
+                <el-table-column prop="totalAmount" label="订单金额" align="center" :formatter="formatMoney"></el-table-column>
+                <el-table-column prop="orderStatus" label="订单状态" align="center" :formatter="formatOrderStatus"></el-table-column>
+                <el-table-column prop="payType" label="支付方式" align="center"></el-table-column>
+                <el-table-column prop="createTime" label="创建时间" align="center" :formatter="formatDateTime"></el-table-column>
+            </el-table>
+
+            <el-pagination
+                @size-change="handleSizeChange"
+                @current-change="handleCurrentChange"
+                :current-page="pagination.current"
+                :page-sizes="[10, 20, 50, 100]"
+                :page-size="pagination.size"
+                layout="total, sizes, prev, pager, next, jumper"
+                :total="pagination.total"
+                style="margin-top: 20px; text-align: right;">
+            </el-pagination>
+        </div>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    queryForm: {
+                        startDate: '',
+                        endDate: ''
+                    },
+                    orderList: [],
+                    statistics: {
+                        totalOrders: 0,
+                        paidOrders: 0,
+                        totalRevenue: 0,
+                        refundRate: 0
+                    },
+                    pagination: {
+                        current: 1,
+                        size: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                // 默认查询最近30天的数据
+                const endDate = new Date();
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - 30);
+                this.queryForm.startDate = startDate.getFullYear() + '-' + 
+                    String(startDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(startDate.getDate()).padStart(2, '0');
+                this.queryForm.endDate = endDate.getFullYear() + '-' + 
+                    String(endDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(endDate.getDate()).padStart(2, '0');
+                this.handleQuery();
+            },
+            methods: {
+                handleQuery() {
+                    axios.post('/api/order/query_page?current=' + this.pagination.current + '&size=' + this.pagination.size, {})
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const pageResult = response.data.data;
+                                this.orderList = pageResult.records || [];
+                                this.pagination.total = pageResult.total || 0;
+                                if (this.orderList.length > 0) {
+                                    this.loadTrainInfo();
+                                }
+                                this.calculateStatistics();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('查询订单失败', error);
+                            this.$message.error('查询订单失败');
+                        });
+                },
+                loadTrainInfo() {
+                    const trainIds = [...new Set(this.orderList.map(o => o.trainId).filter(id => id))];
+                    if (trainIds.length === 0) {
+                        return;
+                    }
+                    let loadedCount = 0;
+                    trainIds.forEach(trainId => {
+                        axios.get('/api/train/select_by_id?id=' + trainId)
+                            .then(response => {
+                                if (response.data.code === 200 && response.data.data) {
+                                    const train = response.data.data;
+                                    this.orderList.forEach((order, index) => {
+                                        if (order.trainId === train.id) {
+                                            this.$set(this.orderList[index], 'trainNo', train.trainNo);
+                                        }
+                                    });
+                                }
+                                loadedCount++;
+                                if (loadedCount === trainIds.length) {
+                                    this.$nextTick(() => {
+                                        this.$forceUpdate();
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('加载车次信息失败', error);
+                                loadedCount++;
+                                if (loadedCount === trainIds.length) {
+                                    this.$nextTick(() => {
+                                        this.$forceUpdate();
+                                    });
+                                }
+                            });
+                    });
+                },
+                calculateStatistics() {
+                    this.statistics.totalOrders = this.orderList.length;
+                    this.statistics.paidOrders = this.orderList.filter(o => o.orderStatus === 1).length;
+                    let totalRevenue = 0;
+                    this.orderList.forEach(order => {
+                        if (order.orderStatus === 1) {
+                            totalRevenue += parseFloat(order.totalAmount || 0);
+                        }
+                    });
+                    this.statistics.totalRevenue = totalRevenue;
+                    const refundOrders = this.orderList.filter(o => o.orderStatus === 2).length;
+                    this.statistics.refundRate = this.statistics.totalOrders > 0 ? 
+                        (refundOrders / this.statistics.totalOrders * 100).toFixed(2) : 0;
+                },
+                resetQuery() {
+                    this.queryForm.startDate = '';
+                    this.queryForm.endDate = '';
+                    this.handleQuery();
+                },
+                formatDateTime(row, column, cellValue) {
+                    return formatDateTime(cellValue);
+                },
+                formatMoney(row, column, cellValue) {
+                    return '￥' + formatMoney(cellValue);
+                },
+                formatOrderStatus(row, column, cellValue) {
+                    return orderStatusMap[cellValue] || '';
+                },
+                handleSizeChange(val) {
+                    this.pagination.size = val;
+                    this.pagination.current = 1;
+                    this.handleQuery();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.current = val;
+                    this.handleQuery();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

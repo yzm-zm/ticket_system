@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>车次查询</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>车次查询</h2>
+        </div>
+
+        <div class="search-form">
+            <el-form :inline="true" :model="queryForm" class="demo-form-inline">
+                <el-form-item label="出发站">
+                    <el-select v-model="queryForm.departureStationId" placeholder="请选择出发站" clearable style="width: 200px;">
+                        <el-option v-for="station in stationList" :key="station.id" :label="station.stationName" :value="station.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="到达站">
+                    <el-select v-model="queryForm.arrivalStationId" placeholder="请选择到达站" clearable style="width: 200px;">
+                        <el-option v-for="station in stationList" :key="station.id" :label="station.stationName" :value="station.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="出发日期">
+                    <el-date-picker v-model="queryForm.departureDate" type="date" placeholder="选择日期" format="yyyy-MM-dd" value-format="yyyy-MM-dd" style="width: 200px;"></el-date-picker>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleQuery">查询</el-button>
+                    <el-button @click="resetQuery">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>
+
+        <el-table :data="trainList" border style="width: 100%;">
+            <el-table-column prop="trainNo" label="车次" align="center"></el-table-column>
+            <el-table-column prop="departureStationName" label="出发站" align="center"></el-table-column>
+            <el-table-column prop="arrivalStationName" label="到达站" align="center"></el-table-column>
+            <el-table-column prop="departureTime" label="出发时间" align="center" :formatter="formatDateTime"></el-table-column>
+            <el-table-column prop="arrivalTime" label="到达时间" align="center" :formatter="formatDateTime"></el-table-column>
+            <el-table-column prop="duration" label="运行时长" align="center" :formatter="formatDuration"></el-table-column>
+            <el-table-column label="操作" align="center">
+                <template slot-scope="scope">
+                    <el-button type="primary" size="small" @click="viewSeats(scope.row)">查看座位</el-button>
+                    <el-button type="success" size="small" @click="buyTicket(scope.row)">购票</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+
+        <el-pagination
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+            :current-page="pagination.current"
+            :page-sizes="[10, 20, 50, 100]"
+            :page-size="pagination.size"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="pagination.total"
+            style="margin-top: 20px; text-align: right;">
+        </el-pagination>
+
+        <!-- 座位信息对话框 -->
+        <el-dialog title="座位信息" :visible.sync="seatDialogVisible" width="800px">
+            <el-table :data="seatList" border>
+                <el-table-column prop="seatTypeName" label="座位类型" align="center"></el-table-column>
+                <el-table-column prop="totalSeats" label="总座位数" align="center"></el-table-column>
+                <el-table-column prop="availableSeats" label="可用座位数" align="center"></el-table-column>
+                <el-table-column prop="price" label="票价" align="center" :formatter="formatMoney"></el-table-column>
+            </el-table>
+        </el-dialog>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    queryForm: {
+                        departureStationId: null,
+                        arrivalStationId: null,
+                        departureDate: ''
+                    },
+                    stationList: [],
+                    trainList: [],
+                    seatList: [],
+                    seatDialogVisible: false,
+                    pagination: {
+                        current: 1,
+                        size: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                this.loadStations();
+                // 默认加载所有车次
+                this.loadAllTrains();
+            },
+            methods: {
+                loadStations() {
+                    axios.get('/api/station/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.stationList = response.data.data;
+                            }
+                        });
+                },
+                loadAllTrains() {
+                    // 默认查询所有启用的车次
+                    axios.post('/api/train/query_page?current=' + this.pagination.current + '&size=' + this.pagination.size, { status: 1 })
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const pageResult = response.data.data;
+                                this.trainList = pageResult.records;
+                                this.pagination.total = pageResult.total;
+                                // 加载车站名称
+                                this.loadStationNames();
+                            }
+                        });
+                },
+                handleQuery() {
+                    // 如果选择了出发站和到达站，使用精确查询
+                    if (this.queryForm.departureStationId && this.queryForm.arrivalStationId) {
+                        if (!this.queryForm.departureDate) {
+                            this.$message.warning('请选择出发日期');
+                            return;
+                        }
+                        axios.post('/api/train/query_with_seats?current=' + this.pagination.current + '&size=' + this.pagination.size, this.queryForm)
+                            .then(response => {
+                                if (response.data.code === 200) {
+                                    const pageResult = response.data.data;
+                                    this.trainList = pageResult.records;
+                                    this.pagination.total = pageResult.total;
+                                    // 加载车站名称
+                                    this.loadStationNames();
+                                }
+                            });
+                    } else {
+                        // 否则加载所有车次
+                        this.loadAllTrains();
+                    }
+                },
+                loadStationNames() {
+                    this.trainList.forEach(train => {
+                        const departureStation = this.stationList.find(s => s.id === train.departureStationId);
+                        const arrivalStation = this.stationList.find(s => s.id === train.arrivalStationId);
+                        train.departureStationName = departureStation ? departureStation.stationName : '';
+                        train.arrivalStationName = arrivalStation ? arrivalStation.stationName : '';
+                    });
+                },
+                resetQuery() {
+                    this.queryForm = {
+                        departureStationId: null,
+                        arrivalStationId: null,
+                        departureDate: ''
+                    };
+                },
+                viewSeats(row) {
+                    axios.get('/api/train_seat/get_by_train_id?trainId=' + row.id)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.seatList = response.data.data || [];
+                                // 加载座位类型名称
+                                this.loadSeatTypeNames();
+                            } else {
+                                this.$message.error('加载座位信息失败');
+                            }
+                        })
+                        .catch(error => {
+                            this.$message.error('加载座位信息失败：' + (error.response?.data?.message || error.message));
+                            console.error(error);
+                        });
+                },
+                loadSeatTypeNames() {
+                    if (this.seatList.length === 0) {
+                        this.seatDialogVisible = true;
+                        return;
+                    }
+                    axios.get('/api/seat_type/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const seatTypes = response.data.data || [];
+                                this.seatList.forEach(seat => {
+                                    const seatType = seatTypes.find(st => st.id === seat.seatTypeId);
+                                    if (seatType) {
+                                        seat.seatTypeName = seatType.typeName;
+                                    } else {
+                                        seat.seatTypeName = '未知类型';
+                                    }
+                                });
+                                this.seatDialogVisible = true;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载座位类型失败', error);
+                            // 即使失败也显示对话框
+                            this.seatList.forEach(seat => {
+                                seat.seatTypeName = '未知类型';
+                            });
+                            this.seatDialogVisible = true;
+                        });
+                },
+                buyTicket(row) {
+                    // 检查登录状态
+                    const userStr = sessionStorage.getItem('user');
+                    if (!userStr) {
+                        this.$message.warning('请先登录后再进行购票');
+                        setTimeout(() => {
+                            window.location.href = '/static/login/login.html';
+                        }, 1000);
+                        return;
+                    }
+                    window.location.href = '/static/train/buy.html?trainId=' + row.id;
+                },
+                formatDateTime(row, column, cellValue) {
+                    return formatDateTime(cellValue);
+                },
+                formatDuration(row, column, cellValue) {
+                    if (!cellValue) return '';
+                    const hours = Math.floor(cellValue / 60);
+                    const minutes = cellValue % 60;
+                    return hours + '小时' + minutes + '分钟';
+                },
+                formatMoney(row, column, cellValue) {
+                    return '￥' + formatMoney(cellValue);
+                },
+                handleSizeChange(val) {
+                    this.pagination.size = val;
+                    this.pagination.current = 1;
+                    if (this.queryForm.departureStationId && this.queryForm.arrivalStationId) {
+                        this.handleQuery();
+                    } else {
+                        this.loadAllTrains();
+                    }
+                },
+                handleCurrentChange(val) {
+                    this.pagination.current = val;
+                    if (this.queryForm.departureStationId && this.queryForm.arrivalStationId) {
+                        this.handleQuery();
+                    } else {
+                        this.loadAllTrains();
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

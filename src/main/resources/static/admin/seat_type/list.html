@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>座位类型管理</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>座位类型管理</h2>
+        </div>
+
+        <div class="button-group">
+            <el-button type="primary" @click="handleAdd">新增座位类型</el-button>
+        </div>
+
+        <div class="search-form">
+            <el-form :inline="true" :model="queryForm" class="demo-form-inline">
+                <el-form-item label="类型名称">
+                    <el-input v-model="queryForm.typeName" placeholder="请输入类型名称" clearable></el-input>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleQuery">查询</el-button>
+                    <el-button @click="resetQuery">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>
+
+        <el-table :data="seatTypeList" border style="width: 100%;">
+            <el-table-column prop="typeName" label="类型名称" align="center"></el-table-column>
+            <el-table-column prop="typeCode" label="类型代码" align="center"></el-table-column>
+            <el-table-column prop="status" label="状态" align="center" :formatter="formatStatus"></el-table-column>
+            <el-table-column label="操作" align="center" width="200">
+                <template slot-scope="scope">
+                    <el-button type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
+                    <el-button type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+
+        <el-pagination
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+            :current-page="pagination.current"
+            :page-sizes="[10, 20, 50, 100]"
+            :page-size="pagination.size"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="pagination.total"
+            style="margin-top: 20px; text-align: right;">
+        </el-pagination>
+
+        <!-- 新增/编辑对话框 -->
+        <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="500px">
+            <el-form :model="form" :rules="rules" ref="form" label-width="100px">
+                <el-form-item label="类型名称" prop="typeName">
+                    <el-input v-model="form.typeName" placeholder="请输入类型名称"></el-input>
+                </el-form-item>
+                <el-form-item label="类型代码" prop="typeCode">
+                    <el-input v-model="form.typeCode" placeholder="请输入类型代码"></el-input>
+                </el-form-item>
+                <el-form-item label="状态" prop="status">
+                    <el-radio-group v-model="form.status">
+                        <el-radio :label="1">启用</el-radio>
+                        <el-radio :label="0">禁用</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+            </el-form>
+            <div slot="footer" class="dialog-footer">
+                <el-button @click="dialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="handleSave">确定</el-button>
+            </div>
+        </el-dialog>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    queryForm: {
+                        typeName: ''
+                    },
+                    seatTypeList: [],
+                    dialogVisible: false,
+                    dialogTitle: '新增座位类型',
+                    form: {
+                        id: null,
+                        typeName: '',
+                        typeCode: '',
+                        status: 1
+                    },
+                    rules: {
+                        typeName: [{ required: true, message: '请输入类型名称', trigger: 'blur' }],
+                        typeCode: [{ required: true, message: '请输入类型代码', trigger: 'blur' }]
+                    },
+                    pagination: {
+                        current: 1,
+                        size: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                this.handleQuery();
+            },
+            methods: {
+                handleQuery() {
+                    const seatType = {
+                        typeName: this.queryForm.typeName || null,
+                        status: null
+                    };
+                    axios.post('/api/seat_type/query_page?current=' + this.pagination.current + '&size=' + this.pagination.size, seatType)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const pageResult = response.data.data;
+                                this.seatTypeList = pageResult.records;
+                                this.pagination.total = pageResult.total;
+                            }
+                        });
+                },
+                resetQuery() {
+                    this.queryForm.typeName = '';
+                    this.handleQuery();
+                },
+                handleAdd() {
+                    this.dialogTitle = '新增座位类型';
+                    this.form = {
+                        id: null,
+                        typeName: '',
+                        typeCode: '',
+                        status: 1
+                    };
+                    this.dialogVisible = true;
+                },
+                handleEdit(row) {
+                    this.dialogTitle = '编辑座位类型';
+                    this.form = { ...row };
+                    this.dialogVisible = true;
+                },
+                handleDelete(row) {
+                    this.$confirm('确认删除该座位类型吗？', '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        axios.post('/api/seat_type/delete_by_id?id=' + row.id)
+                            .then(response => {
+                                if (response.data.code === 200) {
+                                    this.$message.success('删除成功');
+                                    this.handleQuery();
+                                }
+                            });
+                    });
+                },
+                handleSave() {
+                    this.$refs.form.validate((valid) => {
+                        if (valid) {
+                            axios.post('/api/seat_type/save', this.form)
+                                .then(response => {
+                                    if (response.data.code === 200) {
+                                        this.$message.success('保存成功');
+                                        this.dialogVisible = false;
+                                        this.handleQuery();
+                                    }
+                                });
+                        }
+                    });
+                },
+                formatStatus(row, column, cellValue) {
+                    return statusMap[cellValue] || '';
+                },
+                handleSizeChange(val) {
+                    this.pagination.size = val;
+                    this.pagination.current = 1;
+                    this.handleQuery();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.current = val;
+                    this.handleQuery();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

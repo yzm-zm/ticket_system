@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线购票</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>在线购票</h2>
+        </div>
+
+        <div class="form-container" v-if="trainInfo">
+            <h3>车次信息</h3>
+            <el-table :data="[trainInfo]" border style="width: 100%;">
+                <el-table-column prop="trainNo" label="车次" align="center"></el-table-column>
+                <el-table-column label="出发站" align="center">
+                    <template slot-scope="scope">{{ scope.row.departureStationName || '' }}</template>
+                </el-table-column>
+                <el-table-column label="到达站" align="center">
+                    <template slot-scope="scope">{{ scope.row.arrivalStationName || '' }}</template>
+                </el-table-column>
+                <el-table-column label="出发时间" align="center">
+                    <template slot-scope="scope">{{ formatDateTime(scope.row.departureTime) }}</template>
+                </el-table-column>
+                <el-table-column label="到达时间" align="center">
+                    <template slot-scope="scope">{{ formatDateTime(scope.row.arrivalTime) }}</template>
+                </el-table-column>
+                <el-table-column label="运行时长" align="center">
+                    <template slot-scope="scope">{{ formatDuration(scope.row.duration) }}</template>
+                </el-table-column>
+            </el-table>
+        </div>
+
+        <div class="form-container">
+            <h3>可选座位类型</h3>
+            <el-table :data="seatList" border>
+                <el-table-column label="座位类型" align="center">
+                    <template slot-scope="scope">{{ scope.row.seatTypeName || '加载中...' }}</template>
+                </el-table-column>
+                <el-table-column prop="availableSeats" label="可用座位数" align="center"></el-table-column>
+                <el-table-column label="票价" align="center">
+                    <template slot-scope="scope">￥{{ formatMoney(scope.row.price) }}</template>
+                </el-table-column>
+            </el-table>
+            <p style="margin-top: 10px; color: #666; font-size: 12px;">提示：请在下方为每个乘车人选择座位类型</p>
+        </div>
+
+        <div class="form-container">
+            <h3>乘车人信息</h3>
+            <el-button type="primary" @click="addPassenger" style="margin-bottom: 20px;">添加乘车人</el-button>
+            <el-table :data="passengers" border>
+                <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
+                <el-table-column prop="passengerName" label="姓名" align="center">
+                    <template slot-scope="scope">
+                        <el-input v-model="scope.row.passengerName" placeholder="请输入姓名"></el-input>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="idCard" label="身份证号" align="center">
+                    <template slot-scope="scope">
+                        <el-input v-model="scope.row.idCard" placeholder="请输入身份证号"></el-input>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="seatTypeId" label="座位类型" align="center">
+                    <template slot-scope="scope">
+                        <el-select v-model="scope.row.seatTypeId" placeholder="请选择座位类型" style="width: 100%;">
+                            <el-option v-for="seat in seatList" :key="seat.id || seat.seatTypeId" 
+                                :label="(seat.seatTypeName || '未知类型') + ' ￥' + formatMoney(seat.price)" 
+                                :value="seat.seatTypeId"
+                                :disabled="seat.availableSeats <= 0">
+                            </el-option>
+                        </el-select>
+                    </template>
+                </el-table-column>
+                <el-table-column label="操作" align="center" width="100">
+                    <template slot-scope="scope">
+                        <el-button type="danger" size="small" @click="removePassenger(scope.$index)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </div>
+
+        <div class="form-container">
+            <h3>订单总金额：<span style="color: #f56c6c; font-size: 24px;">￥{{ totalAmount }}</span></h3>
+            <el-button type="primary" size="large" @click="submitOrder" style="width: 200px; margin-top: 20px;">提交订单</el-button>
+        </div>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        // 检查登录状态
+        const userStr = sessionStorage.getItem('user');
+        if (!userStr) {
+            alert('请先登录后再进行购票！');
+            window.location.href = '/static/login/login.html';
+        }
+
+        // 获取URL参数
+        const urlParams = new URLSearchParams(window.location.search);
+        const trainId = urlParams.get('trainId');
+        if (!trainId) {
+            alert('请先选择车次！');
+            window.location.href = '/static/train/query.html';
+        }
+
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    trainId: trainId,
+                    trainInfo: null,
+                    seatList: [],
+                    passengers: []
+                }
+            },
+            computed: {
+                totalAmount() {
+                    let total = 0;
+                    this.passengers.forEach(passenger => {
+                        const seat = this.seatList.find(s => s.seatTypeId === passenger.seatTypeId);
+                        if (seat) {
+                            total += parseFloat(seat.price);
+                        }
+                    });
+                    return formatMoney(total);
+                }
+            },
+            mounted() {
+                this.loadTrainInfo();
+                this.loadSeats();
+            },
+            methods: {
+                loadTrainInfo() {
+                    axios.get('/api/train/select_by_id?id=' + this.trainId)
+                        .then(response => {
+                            if (response.data.code === 200 && response.data.data) {
+                                this.trainInfo = response.data.data;
+                                this.loadStationNames();
+                            } else {
+                                this.$message.error('加载车次信息失败');
+                            }
+                        })
+                        .catch(error => {
+                            this.$message.error('加载车次信息失败：' + (error.response?.data?.message || error.message));
+                            console.error(error);
+                        });
+                },
+                loadStationNames() {
+                    if (!this.trainInfo) {
+                        return;
+                    }
+                    axios.get('/api/station/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const stations = response.data.data || [];
+                                const departureStation = stations.find(s => s.id === this.trainInfo.departureStationId);
+                                const arrivalStation = stations.find(s => s.id === this.trainInfo.arrivalStationId);
+                                this.$set(this.trainInfo, 'departureStationName', departureStation ? departureStation.stationName : '');
+                                this.$set(this.trainInfo, 'arrivalStationName', arrivalStation ? arrivalStation.stationName : '');
+                                this.$forceUpdate();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载车站信息失败', error);
+                        });
+                },
+                loadSeats() {
+                    axios.get('/api/train_seat/get_by_train_id?trainId=' + this.trainId)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.seatList = response.data.data || [];
+                                if (this.seatList.length > 0) {
+                                    this.loadSeatTypeNames();
+                                }
+                            } else {
+                                this.$message.error('加载座位信息失败');
+                            }
+                        })
+                        .catch(error => {
+                            this.$message.error('加载座位信息失败：' + (error.response?.data?.message || error.message));
+                            console.error(error);
+                        });
+                },
+                loadSeatTypeNames() {
+                    if (this.seatList.length === 0) {
+                        return;
+                    }
+                    // 先加载座位类型列表
+                    axios.get('/api/seat_type/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const seatTypes = response.data.data || [];
+                                // 为每个座位添加类型名称
+                                this.seatList.forEach((seat, index) => {
+                                    const seatType = seatTypes.find(st => st.id === seat.seatTypeId);
+                                    if (seatType) {
+                                        this.$set(this.seatList[index], 'seatTypeName', seatType.typeName);
+                                    } else {
+                                        this.$set(this.seatList[index], 'seatTypeName', '未知类型');
+                                    }
+                                });
+                                // 强制更新视图
+                                this.$nextTick(() => {
+                                    this.$forceUpdate();
+                                });
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载座位类型失败', error);
+                            this.seatList.forEach((seat, index) => {
+                                this.$set(this.seatList[index], 'seatTypeName', '未知类型');
+                            });
+                            this.$nextTick(() => {
+                                this.$forceUpdate();
+                            });
+                        });
+                },
+                addPassenger() {
+                    this.passengers.push({
+                        passengerName: '',
+                        idCard: '',
+                        seatTypeId: null
+                    });
+                },
+                removePassenger(index) {
+                    this.passengers.splice(index, 1);
+                },
+                submitOrder() {
+                    if (this.passengers.length === 0) {
+                        this.$message.warning('请至少添加一个乘车人');
+                        return;
+                    }
+                    // 验证乘车人信息
+                    for (let i = 0; i < this.passengers.length; i++) {
+                        const p = this.passengers[i];
+                        if (!p.passengerName) {
+                            this.$message.warning('请输入第' + (i + 1) + '个乘车人的姓名');
+                            return;
+                        }
+                        if (!p.idCard) {
+                            this.$message.warning('请输入第' + (i + 1) + '个乘车人的身份证号');
+                            return;
+                        }
+                        if (!p.seatTypeId) {
+                            this.$message.warning('请为第' + (i + 1) + '个乘车人选择座位类型');
+                            return;
+                        }
+                    }
+
+                    const userStr = sessionStorage.getItem('user');
+                    if (!userStr) {
+                        this.$message.error('请先登录');
+                        window.location.href = '/static/login/login.html';
+                        return;
+                    }
+                    const user = JSON.parse(userStr);
+
+                    const orderData = {
+                        trainId: this.trainId,
+                        passengers: this.passengers
+                    };
+
+                    axios.post('/api/order/create?userId=' + user.id, orderData)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.$message.success('订单创建成功，请前往支付');
+                                setTimeout(() => {
+                                    window.location.href = '/static/order/list.html';
+                                }, 1000);
+                            } else {
+                                this.$message.error(response.data.message);
+                            }
+                        })
+                        .catch(error => {
+                            this.$message.error('创建订单失败：' + (error.response?.data?.message || error.message));
+                        });
+                },
+                formatDateTime(dateTime) {
+                    return formatDateTime(dateTime);
+                },
+                formatDuration(duration) {
+                    if (!duration) return '';
+                    const hours = Math.floor(duration / 60);
+                    const minutes = duration % 60;
+                    return hours + '小时' + minutes + '分钟';
+                },
+                formatMoney(amount) {
+                    return formatMoney(amount);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

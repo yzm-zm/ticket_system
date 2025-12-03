@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>车次管理</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>车次管理</h2>
+        </div>
+
+        <div class="button-group">
+            <el-button type="primary" @click="handleAdd">新增车次</el-button>
+        </div>
+
+        <div class="search-form">
+            <el-form :inline="true" :model="queryForm" class="demo-form-inline">
+                <el-form-item label="车次号">
+                    <el-input v-model="queryForm.trainNo" placeholder="请输入车次号" clearable></el-input>
+                </el-form-item>
+                <el-form-item label="出发站">
+                    <el-select v-model="queryForm.departureStationId" placeholder="请选择出发站" clearable style="width: 200px;">
+                        <el-option v-for="station in stationList" :key="station.id" :label="station.stationName" :value="station.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="到达站">
+                    <el-select v-model="queryForm.arrivalStationId" placeholder="请选择到达站" clearable style="width: 200px;">
+                        <el-option v-for="station in stationList" :key="station.id" :label="station.stationName" :value="station.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleQuery">查询</el-button>
+                    <el-button @click="resetQuery">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>
+
+        <el-table :data="trainList" border style="width: 100%;">
+            <el-table-column prop="trainNo" label="车次号" align="center"></el-table-column>
+            <el-table-column prop="trainName" label="车次名称" align="center"></el-table-column>
+            <el-table-column prop="departureStationName" label="出发站" align="center"></el-table-column>
+            <el-table-column prop="arrivalStationName" label="到达站" align="center"></el-table-column>
+            <el-table-column prop="departureTime" label="出发时间" align="center" :formatter="formatDateTime"></el-table-column>
+            <el-table-column prop="arrivalTime" label="到达时间" align="center" :formatter="formatDateTime"></el-table-column>
+            <el-table-column prop="duration" label="运行时长" align="center" :formatter="formatDuration"></el-table-column>
+            <el-table-column prop="status" label="状态" align="center" :formatter="formatStatus"></el-table-column>
+            <el-table-column label="操作" align="center" width="200">
+                <template slot-scope="scope">
+                    <el-button type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
+                    <el-button type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+
+        <el-pagination
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+            :current-page="pagination.current"
+            :page-sizes="[10, 20, 50, 100]"
+            :page-size="pagination.size"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="pagination.total"
+            style="margin-top: 20px; text-align: right;">
+        </el-pagination>
+
+        <!-- 新增/编辑对话框 -->
+        <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="600px">
+            <el-form :model="form" :rules="rules" ref="form" label-width="100px">
+                <el-form-item label="车次号" prop="trainNo">
+                    <el-input v-model="form.trainNo" placeholder="请输入车次号"></el-input>
+                </el-form-item>
+                <el-form-item label="车次名称" prop="trainName">
+                    <el-input v-model="form.trainName" placeholder="请输入车次名称"></el-input>
+                </el-form-item>
+                <el-form-item label="出发站" prop="departureStationId">
+                    <el-select v-model="form.departureStationId" placeholder="请选择出发站" style="width: 100%;">
+                        <el-option v-for="station in stationList" :key="station.id" :label="station.stationName" :value="station.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="到达站" prop="arrivalStationId">
+                    <el-select v-model="form.arrivalStationId" placeholder="请选择到达站" style="width: 100%;">
+                        <el-option v-for="station in stationList" :key="station.id" :label="station.stationName" :value="station.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="出发时间" prop="departureTime">
+                    <el-date-picker v-model="form.departureTime" type="datetime" placeholder="选择出发时间" format="yyyy-MM-dd HH:mm:ss" value-format="yyyy-MM-dd HH:mm:ss" style="width: 100%;"></el-date-picker>
+                </el-form-item>
+                <el-form-item label="到达时间" prop="arrivalTime">
+                    <el-date-picker v-model="form.arrivalTime" type="datetime" placeholder="选择到达时间" format="yyyy-MM-dd HH:mm:ss" value-format="yyyy-MM-dd HH:mm:ss" style="width: 100%;"></el-date-picker>
+                </el-form-item>
+                <el-form-item label="运行时长" prop="duration">
+                    <el-input-number v-model="form.duration" :min="0" placeholder="运行时长（分钟）" style="width: 100%;"></el-input-number>
+                </el-form-item>
+                <el-form-item label="状态" prop="status">
+                    <el-radio-group v-model="form.status">
+                        <el-radio :label="1">启用</el-radio>
+                        <el-radio :label="0">禁用</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+            </el-form>
+            <div slot="footer" class="dialog-footer">
+                <el-button @click="dialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="handleSave">确定</el-button>
+            </div>
+        </el-dialog>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    queryForm: {
+                        trainNo: '',
+                        departureStationId: null,
+                        arrivalStationId: null
+                    },
+                    stationList: [],
+                    trainList: [],
+                    dialogVisible: false,
+                    dialogTitle: '新增车次',
+                    form: {
+                        id: null,
+                        trainNo: '',
+                        trainName: '',
+                        departureStationId: null,
+                        arrivalStationId: null,
+                        departureTime: '',
+                        arrivalTime: '',
+                        duration: 0,
+                        status: 1
+                    },
+                    rules: {
+                        trainNo: [{ required: true, message: '请输入车次号', trigger: 'blur' }],
+                        departureStationId: [{ required: true, message: '请选择出发站', trigger: 'change' }],
+                        arrivalStationId: [{ required: true, message: '请选择到达站', trigger: 'change' }],
+                        departureTime: [{ required: true, message: '请选择出发时间', trigger: 'change' }],
+                        arrivalTime: [{ required: true, message: '请选择到达时间', trigger: 'change' }]
+                    },
+                    pagination: {
+                        current: 1,
+                        size: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                this.loadStations();
+                this.handleQuery();
+            },
+            methods: {
+                loadStations() {
+                    axios.get('/api/station/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.stationList = response.data.data;
+                            }
+                        });
+                },
+                handleQuery() {
+                    const train = {
+                        trainNo: this.queryForm.trainNo || null,
+                        departureStationId: this.queryForm.departureStationId,
+                        arrivalStationId: this.queryForm.arrivalStationId,
+                        status: null
+                    };
+                    axios.post('/api/train/query_page?current=' + this.pagination.current + '&size=' + this.pagination.size, train)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const pageResult = response.data.data;
+                                this.trainList = pageResult.records;
+                                this.pagination.total = pageResult.total;
+                                this.loadStationNames();
+                            }
+                        });
+                },
+                loadStationNames() {
+                    this.trainList.forEach(train => {
+                        const departureStation = this.stationList.find(s => s.id === train.departureStationId);
+                        const arrivalStation = this.stationList.find(s => s.id === train.arrivalStationId);
+                        train.departureStationName = departureStation ? departureStation.stationName : '';
+                        train.arrivalStationName = arrivalStation ? arrivalStation.stationName : '';
+                    });
+                },
+                resetQuery() {
+                    this.queryForm = {
+                        trainNo: '',
+                        departureStationId: null,
+                        arrivalStationId: null
+                    };
+                    this.handleQuery();
+                },
+                handleAdd() {
+                    this.dialogTitle = '新增车次';
+                    this.form = {
+                        id: null,
+                        trainNo: '',
+                        trainName: '',
+                        departureStationId: null,
+                        arrivalStationId: null,
+                        departureTime: '',
+                        arrivalTime: '',
+                        duration: 0,
+                        status: 1
+                    };
+                    this.dialogVisible = true;
+                },
+                handleEdit(row) {
+                    this.dialogTitle = '编辑车次';
+                    this.form = { ...row };
+                    this.dialogVisible = true;
+                },
+                handleDelete(row) {
+                    this.$confirm('确认删除该车次吗？', '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        axios.post('/api/train/delete_by_id?id=' + row.id)
+                            .then(response => {
+                                if (response.data.code === 200) {
+                                    this.$message.success('删除成功');
+                                    this.handleQuery();
+                                }
+                            });
+                    });
+                },
+                handleSave() {
+                    this.$refs.form.validate((valid) => {
+                        if (valid) {
+                            axios.post('/api/train/save', this.form)
+                                .then(response => {
+                                    if (response.data.code === 200) {
+                                        this.$message.success('保存成功');
+                                        this.dialogVisible = false;
+                                        this.handleQuery();
+                                    }
+                                });
+                        }
+                    });
+                },
+                formatDateTime(row, column, cellValue) {
+                    return formatDateTime(cellValue);
+                },
+                formatDuration(row, column, cellValue) {
+                    if (!cellValue) return '';
+                    const hours = Math.floor(cellValue / 60);
+                    const minutes = cellValue % 60;
+                    return hours + '小时' + minutes + '分钟';
+                },
+                formatStatus(row, column, cellValue) {
+                    return statusMap[cellValue] || '';
+                },
+                handleSizeChange(val) {
+                    this.pagination.size = val;
+                    this.pagination.current = 1;
+                    this.handleQuery();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.current = val;
+                    this.handleQuery();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

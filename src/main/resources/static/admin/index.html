@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台管理 - 车站售票系统</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <el-container>
+            <el-header style="height: 60px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; height: 100%;">
+                    <h2 style="margin: 0; color: #333;">车站售票系统 - 后台管理</h2>
+                    <div>
+                        <span style="margin-right: 20px;">欢迎，{{ userInfo.realName || userInfo.username }}</span>
+                        <el-button type="text" @click="goHome" style="margin-right: 10px;">返回首页</el-button>
+                        <el-button type="text" @click="logout">退出登录</el-button>
+                    </div>
+                </div>
+            </el-header>
+            <el-container>
+                <el-aside width="200px" style="height: calc(100vh - 60px);">
+                    <el-menu :default-active="activeMenu" @select="handleMenuSelect" style="height: 100%;">
+                        <el-menu-item index="train">
+                            <i class="el-icon-edit"></i>
+                            <span>车次管理</span>
+                        </el-menu-item>
+                        <el-menu-item index="train_seat">
+                            <i class="el-icon-menu"></i>
+                            <span>座位管理</span>
+                        </el-menu-item>
+                        <el-menu-item index="station">
+                            <i class="el-icon-location"></i>
+                            <span>车站管理</span>
+                        </el-menu-item>
+                        <el-menu-item index="seat_type">
+                            <i class="el-icon-setting"></i>
+                            <span>座位类型管理</span>
+                        </el-menu-item>
+                        <el-menu-item index="order">
+                            <i class="el-icon-tickets"></i>
+                            <span>订单管理</span>
+                        </el-menu-item>
+                        <el-menu-item index="report">
+                            <i class="el-icon-view"></i>
+                            <span>运营报表</span>
+                        </el-menu-item>
+                    </el-menu>
+                </el-aside>
+                <el-main>
+                    <iframe :src="currentPage" style="width: 100%; height: 100%; border: none;"></iframe>
+                </el-main>
+            </el-container>
+        </el-container>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        // 检查登录状态和管理员权限
+        const userStr = sessionStorage.getItem('user');
+        if (!userStr) {
+            window.location.href = '/static/login/login.html';
+        }
+        const userInfo = JSON.parse(userStr || '{}');
+        if (userInfo.username !== 'admin') {
+            alert('您没有权限访问后台管理页面！');
+            window.location.href = '/static/index.html';
+        }
+
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    userInfo: userInfo,
+                    activeMenu: 'train',
+                    currentPage: '/static/admin/train/list.html'
+                }
+            },
+            methods: {
+                handleMenuSelect(index) {
+                    this.activeMenu = index;
+                    const pageMap = {
+                        'train': '/static/admin/train/list.html',
+                        'train_seat': '/static/admin/train_seat/list.html',
+                        'station': '/static/admin/station/list.html',
+                        'seat_type': '/static/admin/seat_type/list.html',
+                        'order': '/static/admin/order/list.html',
+                        'report': '/static/admin/report/index.html'
+                    };
+                    this.currentPage = pageMap[index] || '/static/admin/train/list.html';
+                },
+                goHome() {
+                    window.location.href = '/static/index.html';
+                },
+                logout() {
+                    sessionStorage.removeItem('user');
+                    window.location.href = '/static/login/login.html';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

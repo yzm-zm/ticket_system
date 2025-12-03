@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单管理</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>订单管理</h2>
+        </div>
+
+        <div class="search-form">
+            <el-form :inline="true" :model="queryForm" class="demo-form-inline">
+                <el-form-item label="订单状态">
+                    <el-select v-model="queryForm.orderStatus" placeholder="请选择订单状态" clearable style="width: 200px;">
+                        <el-option label="待支付" :value="0"></el-option>
+                        <el-option label="已支付" :value="1"></el-option>
+                        <el-option label="已退票" :value="2"></el-option>
+                        <el-option label="已改签" :value="3"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleQuery">查询</el-button>
+                    <el-button @click="resetQuery">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>
+
+        <el-table :data="orderList" border style="width: 100%;">
+            <el-table-column prop="orderNo" label="订单号" align="center"></el-table-column>
+            <el-table-column label="车次" align="center">
+                <template slot-scope="scope">{{ scope.row.trainNo || '加载中...' }}</template>
+            </el-table-column>
+            <el-table-column prop="totalAmount" label="订单金额" align="center" :formatter="formatMoney"></el-table-column>
+            <el-table-column prop="orderStatus" label="订单状态" align="center" :formatter="formatOrderStatus"></el-table-column>
+            <el-table-column prop="payType" label="支付方式" align="center"></el-table-column>
+            <el-table-column prop="createTime" label="创建时间" align="center" :formatter="formatDateTime"></el-table-column>
+            <el-table-column label="操作" align="center" width="150">
+                <template slot-scope="scope">
+                    <el-button type="primary" size="small" @click="viewDetail(scope.row)">查看详情</el-button>
+                    <el-button type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+
+        <el-pagination
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+            :current-page="pagination.current"
+            :page-sizes="[10, 20, 50, 100]"
+            :page-size="pagination.size"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="pagination.total"
+            style="margin-top: 20px; text-align: right;">
+        </el-pagination>
+
+        <!-- 订单详情对话框 -->
+        <el-dialog title="订单详情" :visible.sync="detailDialogVisible" width="800px">
+            <el-table :data="[currentOrder]" border style="width: 100%;">
+                <el-table-column prop="orderNo" label="订单号" align="center"></el-table-column>
+                <el-table-column prop="trainNo" label="车次" align="center"></el-table-column>
+                <el-table-column prop="totalAmount" label="订单金额" align="center" :formatter="formatMoney"></el-table-column>
+                <el-table-column prop="orderStatus" label="订单状态" align="center" :formatter="formatOrderStatus"></el-table-column>
+            </el-table>
+            <h3 style="margin-top: 20px;">乘车人信息</h3>
+            <el-table :data="orderDetailList" border>
+                <el-table-column prop="passengerName" label="姓名" align="center"></el-table-column>
+                <el-table-column prop="idCard" label="身份证号" align="center"></el-table-column>
+                <el-table-column label="座位类型" align="center">
+                    <template slot-scope="scope">{{ scope.row.seatTypeName || '加载中...' }}</template>
+                </el-table-column>
+                <el-table-column prop="price" label="票价" align="center" :formatter="formatMoney"></el-table-column>
+            </el-table>
+        </el-dialog>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    queryForm: {
+                        orderStatus: null
+                    },
+                    orderList: [],
+                    orderDetailList: [],
+                    currentOrder: {},
+                    detailDialogVisible: false,
+                    pagination: {
+                        current: 1,
+                        size: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                this.handleQuery();
+            },
+            methods: {
+                handleQuery() {
+                    const order = {
+                        orderStatus: this.queryForm.orderStatus
+                    };
+                    axios.post('/api/order/query_page?current=' + this.pagination.current + '&size=' + this.pagination.size, order)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const pageResult = response.data.data;
+                                this.orderList = pageResult.records || [];
+                                this.pagination.total = pageResult.total || 0;
+                                if (this.orderList.length > 0) {
+                                    this.loadTrainInfo();
+                                }
+                            }
+                        })
+                        .catch(error => {
+                            console.error('查询订单失败', error);
+                            this.$message.error('查询订单失败');
+                        });
+                },
+                loadTrainInfo() {
+                    const trainIds = [...new Set(this.orderList.map(o => o.trainId).filter(id => id))];
+                    if (trainIds.length === 0) {
+                        return;
+                    }
+                    let loadedCount = 0;
+                    trainIds.forEach(trainId => {
+                        axios.get('/api/train/select_by_id?id=' + trainId)
+                            .then(response => {
+                                if (response.data.code === 200 && response.data.data) {
+                                    const train = response.data.data;
+                                    this.orderList.forEach((order, index) => {
+                                        if (order.trainId === train.id) {
+                                            this.$set(this.orderList[index], 'trainNo', train.trainNo);
+                                        }
+                                    });
+                                }
+                                loadedCount++;
+                                if (loadedCount === trainIds.length) {
+                                    this.$nextTick(() => {
+                                        this.$forceUpdate();
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('加载车次信息失败', error);
+                                loadedCount++;
+                                if (loadedCount === trainIds.length) {
+                                    this.$nextTick(() => {
+                                        this.$forceUpdate();
+                                    });
+                                }
+                            });
+                    });
+                },
+                resetQuery() {
+                    this.queryForm.orderStatus = null;
+                    this.handleQuery();
+                },
+                viewDetail(row) {
+                    this.currentOrder = Object.assign({}, row);
+                    axios.get('/api/order_detail/get_by_order_id?orderId=' + row.id)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.orderDetailList = response.data.data || [];
+                                this.loadSeatTypeNames();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载订单详情失败', error);
+                            this.$message.error('加载订单详情失败');
+                        });
+                    this.detailDialogVisible = true;
+                },
+                loadSeatTypeNames() {
+                    if (this.orderDetailList.length === 0) {
+                        return;
+                    }
+                    axios.get('/api/seat_type/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const seatTypes = response.data.data || [];
+                                this.orderDetailList.forEach((detail, index) => {
+                                    const seatType = seatTypes.find(st => st.id === detail.seatTypeId);
+                                    this.$set(this.orderDetailList[index], 'seatTypeName', seatType ? seatType.typeName : '未知类型');
+                                });
+                                this.$nextTick(() => {
+                                    this.$forceUpdate();
+                                });
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载座位类型失败', error);
+                            this.orderDetailList.forEach((detail, index) => {
+                                this.$set(this.orderDetailList[index], 'seatTypeName', '未知类型');
+                            });
+                            this.$nextTick(() => {
+                                this.$forceUpdate();
+                            });
+                        });
+                },
+                handleDelete(row) {
+                    this.$confirm('确认删除该订单吗？', '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        axios.post('/api/order/delete_by_id?id=' + row.id)
+                            .then(response => {
+                                if (response.data.code === 200) {
+                                    this.$message.success('删除成功');
+                                    this.handleQuery();
+                                }
+                            });
+                    });
+                },
+                formatDateTime(row, column, cellValue) {
+                    return formatDateTime(cellValue);
+                },
+                formatMoney(row, column, cellValue) {
+                    return '￥' + formatMoney(cellValue);
+                },
+                formatOrderStatus(row, column, cellValue) {
+                    return orderStatusMap[cellValue] || '';
+                },
+                handleSizeChange(val) {
+                    this.pagination.size = val;
+                    this.pagination.current = 1;
+                    this.handleQuery();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.current = val;
+                    this.handleQuery();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

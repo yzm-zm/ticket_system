@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电子票</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+    <style>
+        .ticket-container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: #fff;
+            padding: 30px;
+            border: 2px solid #409EFF;
+        }
+        .ticket-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px dashed #409EFF;
+        }
+        .ticket-header h1 {
+            color: #409EFF;
+            margin: 0;
+        }
+        .ticket-info {
+            margin-bottom: 30px;
+        }
+        .ticket-info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .ticket-info-label {
+            font-weight: bold;
+            color: #666;
+            width: 120px;
+        }
+        .ticket-info-value {
+            flex: 1;
+            color: #333;
+        }
+        .passenger-list {
+            margin-top: 30px;
+        }
+        .passenger-item {
+            border: 1px solid #e0e0e0;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .print-btn {
+            text-align: center;
+            margin-top: 30px;
+        }
+        @media print {
+            .print-btn {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="ticket-container" id="ticketContent">
+            <div class="ticket-header">
+                <h1>电子客票</h1>
+                <p style="margin: 10px 0; color: #666;">车站售票系统</p>
+            </div>
+
+            <div class="ticket-info" v-if="ticket">
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">订单号：</span>
+                    <span class="ticket-info-value">{{ ticket.orderNo }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">车次：</span>
+                    <span class="ticket-info-value">{{ ticket.trainNo }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">出发站：</span>
+                    <span class="ticket-info-value">{{ ticket.departureStationName }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">到达站：</span>
+                    <span class="ticket-info-value">{{ ticket.arrivalStationName }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">出发时间：</span>
+                    <span class="ticket-info-value">{{ formatDateTime(ticket.departureTime) }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">到达时间：</span>
+                    <span class="ticket-info-value">{{ formatDateTime(ticket.arrivalTime) }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">订单金额：</span>
+                    <span class="ticket-info-value" style="color: #f56c6c; font-weight: bold;">￥{{ formatMoney(ticket.totalAmount) }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">支付方式：</span>
+                    <span class="ticket-info-value">{{ ticket.payType }}</span>
+                </div>
+                <div class="ticket-info-row">
+                    <span class="ticket-info-label">支付时间：</span>
+                    <span class="ticket-info-value">{{ formatDateTime(ticket.payTime) }}</span>
+                </div>
+            </div>
+
+            <div class="passenger-list" v-if="ticket && ticket.passengers">
+                <h3 style="margin-bottom: 15px;">乘车人信息</h3>
+                <div class="passenger-item" v-for="(passenger, index) in ticket.passengers" :key="index">
+                    <div class="ticket-info-row">
+                        <span class="ticket-info-label">姓名：</span>
+                        <span class="ticket-info-value">{{ passenger.passengerName }}</span>
+                    </div>
+                    <div class="ticket-info-row">
+                        <span class="ticket-info-label">身份证号：</span>
+                        <span class="ticket-info-value">{{ passenger.idCard }}</span>
+                    </div>
+                    <div class="ticket-info-row">
+                        <span class="ticket-info-label">座位类型：</span>
+                        <span class="ticket-info-value">{{ passenger.seatTypeName }}</span>
+                    </div>
+                    <div class="ticket-info-row" v-if="passenger.seatNo">
+                        <span class="ticket-info-label">座位号：</span>
+                        <span class="ticket-info-value">{{ passenger.seatNo }}</span>
+                    </div>
+                    <div class="ticket-info-row">
+                        <span class="ticket-info-label">票价：</span>
+                        <span class="ticket-info-value">￥{{ formatMoney(passenger.price) }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="print-btn">
+                <el-button type="primary" @click="printTicket">打印电子票</el-button>
+                <el-button @click="closeWindow">关闭</el-button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    ticket: null
+                }
+            },
+            mounted() {
+                const ticketData = sessionStorage.getItem('ticketData');
+                if (ticketData) {
+                    this.ticket = JSON.parse(ticketData);
+                } else {
+                    this.$message.error('未找到电子票信息');
+                }
+            },
+            methods: {
+                formatDateTime(dateTime) {
+                    return formatDateTime(dateTime);
+                },
+                formatMoney(amount) {
+                    return formatMoney(amount);
+                },
+                printTicket() {
+                    window.print();
+                },
+                closeWindow() {
+                    window.close();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

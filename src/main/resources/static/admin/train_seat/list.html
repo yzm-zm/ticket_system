@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>座位管理</title>
+    <link rel="stylesheet" href="/libs/element-ui/index.css">
+    <link href="/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="page-header">
+            <h2>座位管理</h2>
+        </div>
+
+        <div class="button-group">
+            <el-button type="primary" @click="handleAdd">新增座位配置</el-button>
+        </div>
+
+        <div class="search-form">
+            <el-form :inline="true" :model="queryForm" class="demo-form-inline">
+                <el-form-item label="车次">
+                    <el-select v-model="queryForm.trainId" placeholder="请选择车次" clearable filterable style="width: 200px;">
+                        <el-option v-for="train in trainList" :key="train.id" :label="train.trainNo" :value="train.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleQuery">查询</el-button>
+                    <el-button @click="resetQuery">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>
+
+        <el-table :data="trainSeatList" border style="width: 100%;">
+            <el-table-column label="车次" align="center">
+                <template slot-scope="scope">{{ scope.row.trainNo || '加载中...' }}</template>
+            </el-table-column>
+            <el-table-column label="座位类型" align="center">
+                <template slot-scope="scope">{{ scope.row.seatTypeName || '加载中...' }}</template>
+            </el-table-column>
+            <el-table-column prop="totalSeats" label="总座位数" align="center"></el-table-column>
+            <el-table-column prop="availableSeats" label="可用座位数" align="center"></el-table-column>
+            <el-table-column prop="price" label="票价" align="center" :formatter="formatMoney"></el-table-column>
+            <el-table-column prop="status" label="状态" align="center" :formatter="formatStatus"></el-table-column>
+            <el-table-column label="操作" align="center" width="280">
+                <template slot-scope="scope">
+                    <el-button type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
+                    <el-button type="success" size="small" @click="adjustSeats(scope.row)">余票调整</el-button>
+                    <el-button type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+
+        <el-pagination
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+            :current-page="pagination.current"
+            :page-sizes="[10, 20, 50, 100]"
+            :page-size="pagination.size"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="pagination.total"
+            style="margin-top: 20px; text-align: right;">
+        </el-pagination>
+
+        <!-- 新增/编辑对话框 -->
+        <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="500px">
+            <el-form :model="form" :rules="rules" ref="form" label-width="100px">
+                <el-form-item label="车次" prop="trainId">
+                    <el-select v-model="form.trainId" placeholder="请选择车次" filterable style="width: 100%;">
+                        <el-option v-for="train in trainList" :key="train.id" :label="train.trainNo" :value="train.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="座位类型" prop="seatTypeId">
+                    <el-select v-model="form.seatTypeId" placeholder="请选择座位类型" style="width: 100%;">
+                        <el-option v-for="seatType in seatTypeList" :key="seatType.id" :label="seatType.typeName" :value="seatType.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="总座位数" prop="totalSeats">
+                    <el-input-number v-model="form.totalSeats" :min="0" style="width: 100%;"></el-input-number>
+                </el-form-item>
+                <el-form-item label="可用座位数" prop="availableSeats">
+                    <el-input-number v-model="form.availableSeats" :min="0" style="width: 100%;"></el-input-number>
+                </el-form-item>
+                <el-form-item label="票价" prop="price">
+                    <el-input-number v-model="form.price" :min="0" :precision="2" style="width: 100%;"></el-input-number>
+                </el-form-item>
+                <el-form-item label="状态" prop="status">
+                    <el-radio-group v-model="form.status">
+                        <el-radio :label="1">启用</el-radio>
+                        <el-radio :label="0">禁用</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+            </el-form>
+            <div slot="footer" class="dialog-footer">
+                <el-button @click="dialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="handleSave">确定</el-button>
+            </div>
+        </el-dialog>
+
+        <!-- 余票调整对话框 -->
+        <el-dialog title="余票调整" :visible.sync="adjustDialogVisible" width="500px">
+            <el-form :model="adjustForm" label-width="120px">
+                <el-form-item label="车次">
+                    <el-input :value="adjustForm.trainNo" disabled></el-input>
+                </el-form-item>
+                <el-form-item label="座位类型">
+                    <el-input :value="adjustForm.seatTypeName" disabled></el-input>
+                </el-form-item>
+                <el-form-item label="总座位数">
+                    <el-input-number v-model="adjustForm.totalSeats" :min="0" style="width: 100%;"></el-input-number>
+                </el-form-item>
+                <el-form-item label="可用座位数">
+                    <el-input-number v-model="adjustForm.availableSeats" :min="0" :max="adjustForm.totalSeats" style="width: 100%;"></el-input-number>
+                </el-form-item>
+            </el-form>
+            <div slot="footer" class="dialog-footer">
+                <el-button @click="adjustDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="confirmAdjust">确定</el-button>
+            </div>
+        </el-dialog>
+    </div>
+
+    <script src="/libs/vue/vue.js"></script>
+    <script src="/libs/element-ui/index.js"></script>
+    <script src="/libs/axios/axios.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    queryForm: {
+                        trainId: null
+                    },
+                    trainList: [],
+                    seatTypeList: [],
+                    trainSeatList: [],
+                    dialogVisible: false,
+                    dialogTitle: '新增座位配置',
+                    adjustDialogVisible: false,
+                    form: {
+                        id: null,
+                        trainId: null,
+                        seatTypeId: null,
+                        totalSeats: 0,
+                        availableSeats: 0,
+                        price: 0,
+                        status: 1
+                    },
+                    adjustForm: {
+                        id: null,
+                        trainNo: '',
+                        seatTypeName: '',
+                        totalSeats: 0,
+                        availableSeats: 0
+                    },
+                    rules: {
+                        trainId: [{ required: true, message: '请选择车次', trigger: 'change' }],
+                        seatTypeId: [{ required: true, message: '请选择座位类型', trigger: 'change' }],
+                        totalSeats: [{ required: true, message: '请输入总座位数', trigger: 'blur' }],
+                        price: [{ required: true, message: '请输入票价', trigger: 'blur' }]
+                    },
+                    pagination: {
+                        current: 1,
+                        size: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                // 先加载基础数据，再查询列表
+                Promise.all([
+                    this.loadTrainsPromise(),
+                    this.loadSeatTypesPromise()
+                ]).then(() => {
+                    this.handleQuery();
+                });
+            },
+            methods: {
+                loadTrains() {
+                    axios.post('/api/train/query_page?current=1&size=1000', {})
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.trainList = response.data.data.records;
+                            }
+                        });
+                },
+                loadSeatTypes() {
+                    axios.get('/api/seat_type/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.seatTypeList = response.data.data;
+                            }
+                        });
+                },
+                handleQuery() {
+                    const trainSeat = {
+                        trainId: this.queryForm.trainId,
+                        status: null
+                    };
+                    axios.post('/api/train_seat/query_page?current=' + this.pagination.current + '&size=' + this.pagination.size, trainSeat)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                const pageResult = response.data.data;
+                                this.trainSeatList = pageResult.records || [];
+                                this.pagination.total = pageResult.total || 0;
+                                // 确保车次和座位类型列表已加载
+                                if (this.trainList.length > 0 && this.seatTypeList.length > 0) {
+                                    this.loadNames();
+                                } else {
+                                    // 如果列表未加载，先加载列表
+                                    Promise.all([
+                                        this.loadTrainsPromise(),
+                                        this.loadSeatTypesPromise()
+                                    ]).then(() => {
+                                        this.loadNames();
+                                    });
+                                }
+                            }
+                        })
+                        .catch(error => {
+                            console.error('查询座位配置失败', error);
+                            this.$message.error('查询失败');
+                        });
+                },
+                loadTrainsPromise() {
+                    return axios.post('/api/train/query_page?current=1&size=1000', {})
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.trainList = response.data.data.records || [];
+                            }
+                        });
+                },
+                loadSeatTypesPromise() {
+                    return axios.get('/api/seat_type/list_all')
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.seatTypeList = response.data.data || [];
+                            }
+                        });
+                },
+                loadNames() {
+                    this.trainSeatList.forEach((seat, index) => {
+                        const train = this.trainList.find(t => t.id === seat.trainId);
+                        const seatType = this.seatTypeList.find(st => st.id === seat.seatTypeId);
+                        // 使用 $set 确保响应式更新
+                        this.$set(this.trainSeatList[index], 'trainNo', train ? train.trainNo : '');
+                        this.$set(this.trainSeatList[index], 'seatTypeName', seatType ? seatType.typeName : '');
+                    });
+                    // 强制更新视图
+                    this.$nextTick(() => {
+                        this.$forceUpdate();
+                    });
+                },
+                resetQuery() {
+                    this.queryForm.trainId = null;
+                    this.handleQuery();
+                },
+                handleAdd() {
+                    this.dialogTitle = '新增座位配置';
+                    this.form = {
+                        id: null,
+                        trainId: null,
+                        seatTypeId: null,
+                        totalSeats: 0,
+                        availableSeats: 0,
+                        price: 0,
+                        status: 1
+                    };
+                    this.dialogVisible = true;
+                },
+                handleEdit(row) {
+                    console.log('编辑按钮点击，行数据:', row);
+                    if (!row || !row.id) {
+                        this.$message.error('数据错误，请刷新后重试');
+                        return;
+                    }
+                    this.dialogTitle = '编辑座位配置';
+                    // 深拷贝数据，确保表单数据独立
+                    this.form = {
+                        id: row.id,
+                        trainId: row.trainId,
+                        seatTypeId: row.seatTypeId,
+                        totalSeats: row.totalSeats || 0,
+                        availableSeats: row.availableSeats || 0,
+                        price: row.price || 0,
+                        status: row.status !== undefined ? row.status : 1
+                    };
+                    // 清除表单验证状态
+                    this.$nextTick(() => {
+                        if (this.$refs.form) {
+                            this.$refs.form.clearValidate();
+                        }
+                    });
+                    this.dialogVisible = true;
+                },
+                handleDelete(row) {
+                    this.$confirm('确认删除该座位配置吗？', '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        axios.post('/api/train_seat/delete_by_id?id=' + row.id)
+                            .then(response => {
+                                if (response.data.code === 200) {
+                                    this.$message.success('删除成功');
+                                    this.handleQuery();
+                                }
+                            });
+                    });
+                },
+                handleSave() {
+                    this.$refs.form.validate((valid) => {
+                        if (valid) {
+                            // 确保数据格式正确
+                            const saveData = {
+                                id: this.form.id || null,
+                                trainId: this.form.trainId,
+                                seatTypeId: this.form.seatTypeId,
+                                totalSeats: parseInt(this.form.totalSeats) || 0,
+                                availableSeats: parseInt(this.form.availableSeats) || 0,
+                                price: parseFloat(this.form.price) || 0,
+                                status: this.form.status !== undefined ? parseInt(this.form.status) : 1
+                            };
+                            // 验证可用座位数不能大于总座位数
+                            if (saveData.availableSeats > saveData.totalSeats) {
+                                this.$message.warning('可用座位数不能大于总座位数');
+                                return;
+                            }
+                            console.log('保存数据:', saveData);
+                            axios.post('/api/train_seat/save', saveData)
+                                .then(response => {
+                                    if (response.data.code === 200) {
+                                        this.$message.success('保存成功');
+                                        this.dialogVisible = false;
+                                        this.handleQuery();
+                                    } else {
+                                        this.$message.error(response.data.message || '保存失败');
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('保存失败', error);
+                                    const errorMsg = error.response?.data?.message || error.message || '保存失败';
+                                    this.$message.error('保存失败：' + errorMsg);
+                                });
+                        }
+                    });
+                },
+                adjustSeats(row) {
+                    console.log('余票调整按钮点击，行数据:', row);
+                    if (!row || !row.id) {
+                        this.$message.error('数据错误，请刷新后重试');
+                        return;
+                    }
+                    // 确保车次和座位类型名称已加载
+                    let trainNo = row.trainNo || '';
+                    let seatTypeName = row.seatTypeName || '';
+                    
+                    // 如果名称未加载，尝试从列表中查找
+                    if (!trainNo && row.trainId) {
+                        const train = this.trainList.find(t => t.id === row.trainId);
+                        trainNo = train ? train.trainNo : '';
+                    }
+                    if (!seatTypeName && row.seatTypeId) {
+                        const seatType = this.seatTypeList.find(st => st.id === row.seatTypeId);
+                        seatTypeName = seatType ? seatType.typeName : '';
+                    }
+                    
+                    this.adjustForm = {
+                        id: row.id,
+                        trainNo: trainNo,
+                        seatTypeName: seatTypeName,
+                        totalSeats: row.totalSeats || 0,
+                        availableSeats: row.availableSeats || 0
+                    };
+                    console.log('余票调整表单数据:', this.adjustForm);
+                    this.adjustDialogVisible = true;
+                },
+                confirmAdjust() {
+                    if (!this.adjustForm.id) {
+                        this.$message.error('数据错误，请刷新后重试');
+                        return;
+                    }
+                    if (this.adjustForm.availableSeats > this.adjustForm.totalSeats) {
+                        this.$message.warning('可用座位数不能大于总座位数');
+                        return;
+                    }
+                    if (this.adjustForm.totalSeats < 0 || this.adjustForm.availableSeats < 0) {
+                        this.$message.warning('座位数不能为负数');
+                        return;
+                    }
+                    // 先获取完整数据，然后更新
+                    axios.get('/api/train_seat/select_by_id?id=' + this.adjustForm.id)
+                        .then(response => {
+                            if (response.data.code === 200 && response.data.data) {
+                                const seat = response.data.data;
+                                // 创建更新对象，只更新需要修改的字段，确保数据类型正确
+                                const updateData = {
+                                    id: seat.id,
+                                    trainId: seat.trainId,
+                                    seatTypeId: seat.seatTypeId,
+                                    totalSeats: parseInt(this.adjustForm.totalSeats) || 0,
+                                    availableSeats: parseInt(this.adjustForm.availableSeats) || 0,
+                                    price: seat.price,
+                                    status: seat.status !== undefined ? parseInt(seat.status) : 1
+                                };
+                                console.log('更新数据:', updateData);
+                                axios.post('/api/train_seat/save', updateData)
+                                    .then(response => {
+                                        if (response.data.code === 200) {
+                                            this.$message.success('余票调整成功');
+                                            this.adjustDialogVisible = false;
+                                            this.handleQuery();
+                                        } else {
+                                            this.$message.error(response.data.message || '调整失败');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        console.error('保存失败', error);
+                                        this.$message.error('保存失败：' + (error.response?.data?.message || error.message));
+                                    });
+                            } else {
+                                this.$message.error('获取座位信息失败');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('获取座位信息失败', error);
+                            this.$message.error('获取座位信息失败：' + (error.response?.data?.message || error.message));
+                        });
+                },
+                formatMoney(row, column, cellValue) {
+                    return '￥' + formatMoney(cellValue);
+                },
+                formatStatus(row, column, cellValue) {
+                    return statusMap[cellValue] || '';
+                },
+                handleSizeChange(val) {
+                    this.pagination.size = val;
+                    this.pagination.current = 1;
+                    this.handleQuery();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.current = val;
+                    this.handleQuery();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+
